@@ -365,22 +365,40 @@ export default function Home() {
 
   const onExportCsv = useCallback(() => {
       if(!currentData.current.length) return;
+      
+      const summaryRows = [
+        "Summary",
+        `"Total In (Cash In)","${ui.sumIn.current?.textContent || '0.00'}"`,
+        `"Total Out (Cash Out)","${ui.sumOut.current?.textContent || '0.00'}"`,
+        `"Total Charge","${ui.sumCharge.current?.textContent || '0.00'}"`,
+        "" // Empty line for separation
+      ];
+
       const head = ['File','Date','Type','Details','TRX ID','Out','In','Charge','Balance'];
-      const rows = [head.join(',')];
-      currentData.current.forEach((r: any) => rows.push([`"${r.fileName}"`,`"${r.date}"`,`"${r.type}"`,`"${r.details}"`,`"${r.trxId}"`,r.out,r.in,r.charge,r.balance].join(',')));
+      const dataRows = [head.join(',')];
+      currentData.current.forEach((r: any) => dataRows.push([`"${r.fileName}"`,`"${r.date}"`,`"${r.type}"`,`"${r.details}"`,`"${r.trxId}"`,r.out,r.in,r.charge,r.balance].join(',')));
+      
+      const csvContent = [...summaryRows, ...dataRows].join('\n');
+
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type:'text/csv'}));
+      a.href = URL.createObjectURL(new Blob([csvContent], {type:'text/csv'}));
       a.download = 'export.csv'; a.click();
   }, []);
 
   const onExportPdf = useCallback(() => {
       if(!currentData.current.length || !window.jspdf) return;
       const doc = new window.jspdf.jsPDF({orientation:'landscape'});
-      doc.text("Statement", 14, 15);
+      
+      doc.text("Statement Summary", 14, 15);
+      doc.setFontSize(10);
+      doc.text(`Total In (Cash In): ${ui.sumIn.current?.textContent || '0.00'}`, 14, 22);
+      doc.text(`Total Out (Cash Out): ${ui.sumOut.current?.textContent || '0.00'}`, 14, 27);
+      doc.text(`Total Charge: ${ui.sumCharge.current?.textContent || '0.00'}`, 14, 32);
+
       (doc as any).autoTable({
           head: [['Date','Type','Details','TRX ID','Out','In','Charge','Balance']],
           body: currentData.current.map((r: any) => [r.date,r.type,r.details,r.trxId,r.out,r.in,r.charge,r.balance]),
-          startY: 20, theme:'grid', styles:{fontSize:8}
+          startY: 40, theme:'grid', styles:{fontSize:8}
       });
       doc.save('export.pdf');
   }, []);
