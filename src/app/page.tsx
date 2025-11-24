@@ -5,12 +5,11 @@ import Script from 'next/script';
 
 export default function Home() {
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
-  const [_, setRender] = useState(0); // Used to force re-render
 
-  const allData = useRef([]);
-  const currentData = useRef([]);
-  const uploadedFiles = useRef(new Set());
-  const monthMap = { 'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5, 'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11 };
+  const allData = useRef<any[]>([]);
+  const currentData = useRef<any[]>([]);
+  const uploadedFiles = useRef(new Set<string>());
+  const monthMap: { [key: string]: number } = { 'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5, 'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11 };
 
   const ui = {
     uploader: useRef<HTMLInputElement>(null),
@@ -53,19 +52,26 @@ export default function Home() {
     if(!scriptsLoaded) return;
     
     const showToast = (msg: string, type = 'alert-info') => {
+      if (!ui.toastContainer.current) return;
       const t = document.createElement('div');
       t.className = `alert ${type} shadow-lg rounded-lg mb-2 border border-base-content/10 p-2 text-sm`;
       t.innerHTML = `<span>${msg}</span>`;
-      ui.toastContainer.current?.appendChild(t);
+      ui.toastContainer.current.appendChild(t);
       setTimeout(() => t.remove(), 3000);
     }
     
     const updateUI = (hasData: boolean) => {
         const method = hasData ? 'remove' : 'add';
         ui.emptyState.current?.classList[method]('hidden');
-        ui.resultContainer.current?.classList[method]('hidden');
-        ui.summary.current?.classList[method]('hidden');
-        ui.fileListSection.current?.classList[uploadedFiles.current.size > 0 ? 'remove' : 'add']('hidden');
+        if (ui.resultContainer.current) {
+            ui.resultContainer.current.classList.toggle('hidden', !hasData);
+        }
+        if (ui.summary.current) {
+            ui.summary.current.classList.toggle('hidden', !hasData);
+        }
+        if (ui.fileListSection.current) {
+            ui.fileListSection.current.classList.toggle('hidden', uploadedFiles.current.size === 0);
+        }
         
         [ui.filterInput, ui.mobileFilter, ui.typeFilter, ui.startDate, ui.endDate, ui.clearBtn, ui.exportCsvBtn, ui.exportPdfBtn].forEach(el => {
             if (el.current) el.current.disabled = !hasData
@@ -110,7 +116,7 @@ export default function Home() {
             removeFile(target.dataset.filename);
         }
     }
-    ui.fileListContainer.current?.addEventListener('click', onRemoveFileClick);
+    ui.fileListContainer.current?.addEventListener('click', onRemoveFileClick as any);
 
 
     const parseDate = (str: string) => {
@@ -143,13 +149,15 @@ export default function Home() {
 
     const updateTypeDropdown = () => {
         const types = [...new Set(allData.current.map((d: any) => d.type).filter(Boolean))].sort();
-        if(ui.typeFilter.current) ui.typeFilter.current.innerHTML = '<option value="">All Types</option>';
-        types.forEach((t: any) => {
-            const opt = document.createElement('option');
-            opt.value = t;
-            opt.textContent = t;
-            ui.typeFilter.current?.appendChild(opt);
-        });
+        if(ui.typeFilter.current) {
+            ui.typeFilter.current.innerHTML = '<option value="">All Types</option>';
+            types.forEach((t: any) => {
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                ui.typeFilter.current?.appendChild(opt);
+            });
+        }
     }
 
     const renderTable = (data: any[]) => {
@@ -255,9 +263,9 @@ export default function Home() {
                 lines[y].push(i);
             });
             
-            const sortedY = Object.keys(lines).sort((a,b)=>Number(b)-Number(a));
+            const sortedY = Object.keys(lines).map(Number).sort((a,b)=>b-a);
             const tempRows = sortedY.map(y => {
-                const items = lines[Number(y)].sort((a,b)=>a.transform[4]-b.transform[4]);
+                const items = lines[y].sort((a,b)=>a.transform[4]-b.transform[4]);
                 return { y, items, str: items.map(i=>i.str).join(' '), date: parseDate(items.map(i=>i.str).join(' ')) };
             });
 
@@ -316,7 +324,7 @@ export default function Home() {
             } catch(err: any) {
                 if(err.name === 'PasswordException') {
                     try {
-                        const pwd = await new Promise((res, rej) => {
+                        const pwd = await new Promise<string>((res, rej) => {
                             if(ui.passwordInput.current) ui.passwordInput.current.value=''; 
                             ui.passwordError.current?.classList.add('hidden'); 
                             ui.passwordModal.current?.showModal();
@@ -374,22 +382,50 @@ export default function Home() {
         if(!localStorage.getItem('cachePref')) ui.cacheModal.current?.showModal();
         ui.saveCacheBtn.current?.addEventListener('click', onSaveCache);
         
-        [ui.filterInput, ui.mobileFilter, ui.startDate, ui.endDate].forEach(el => el.current?.addEventListener('input', onFilterChange));
-        ui.typeFilter.current?.addEventListener('change', onFilterChange);
-        ui.clearBtn.current?.addEventListener('click', onClear);
-        ui.uploader.current?.addEventListener('change', onUploaderChange);
-        ui.exportCsvBtn.current?.addEventListener('click', onExportCsv);
-        ui.exportPdfBtn.current?.addEventListener('click', onExportPdf);
+        const filterInputEl = ui.filterInput.current;
+        const mobileFilterEl = ui.mobileFilter.current;
+        const startDateEl = ui.startDate.current;
+        const endDateEl = ui.endDate.current;
+        const typeFilterEl = ui.typeFilter.current;
+        const clearBtnEl = ui.clearBtn.current;
+        const uploaderEl = ui.uploader.current;
+        const exportCsvBtnEl = ui.exportCsvBtn.current;
+        const exportPdfBtnEl = ui.exportPdfBtn.current;
+        const fileListContainerEl = ui.fileListContainer.current;
+
+        filterInputEl?.addEventListener('input', onFilterChange);
+        mobileFilterEl?.addEventListener('input', onFilterChange);
+        startDateEl?.addEventListener('input', onFilterChange);
+        endDateEl?.addEventListener('input', onFilterChange);
+        typeFilterEl?.addEventListener('change', onFilterChange);
+        clearBtnEl?.addEventListener('click', onClear);
+        uploaderEl?.addEventListener('change', onUploaderChange);
+        exportCsvBtnEl?.addEventListener('click', onExportCsv);
+        exportPdfBtnEl?.addEventListener('click', onExportPdf);
       
+        const onRemoveFileClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if(target.tagName === 'BUTTON' && target.dataset.filename) {
+                removeFile(target.dataset.filename);
+            }
+        }
+        fileListContainerEl?.addEventListener('click', onRemoveFileClick as any);
+
         return () => {
           // Cleanup
            ui.saveCacheBtn.current?.removeEventListener('click', onSaveCache);
-          [ui.filterInput, ui.mobileFilter, ui.startDate, ui.endDate].forEach(el => el.current?.removeEventListener('input', onFilterChange));
-          ui.typeFilter.current?.removeEventListener('change', onFilterChange);
-          ui.clearBtn.current?.removeEventListener('click', onClear);
-          ui.uploader.current?.removeEventListener('change', onUploaderChange);
-          ui.exportCsvBtn.current?.removeEventListener('click', onExportCsv);
-          ui.exportPdfBtn.current?.removeEventListener('click', onExportPdf);
+           filterInputEl?.removeEventListener('input', onFilterChange);
+           mobileFilterEl?.removeEventListener('input', onFilterChange);
+           startDateEl?.removeEventListener('input', onFilterChange);
+           endDateEl?.removeEventListener('input', onFilterChange);
+           typeFilterEl?.removeEventListener('change', onFilterChange);
+           clearBtnEl?.removeEventListener('click', onClear);
+           uploaderEl?.removeEventListener('change', onUploaderChange);
+           exportCsvBtnEl?.removeEventListener('click', onExportCsv);
+           exportPdfBtnEl?.removeEventListener('click', onExportPdf);
+          if (fileListContainerEl) {
+            fileListContainerEl.removeEventListener('click', onRemoveFileClick as any);
+          }
         }
 
     }, [scriptsLoaded]);

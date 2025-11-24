@@ -7,10 +7,7 @@ export default {
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
-  plugins: [require('daisyui'), require('tailwindcss-animate')],
-  daisyui: {
-    themes: ["night"],
-  },
+  plugins: [require('tailwindcss-animate')],
   theme: {
     extend: {
       fontFamily: {
