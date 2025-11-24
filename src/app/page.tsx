@@ -244,8 +244,11 @@ export default function Home() {
     }
 
     if(newFilesCount > 0) {
-      setAllData(prev => [...prev, ...newTransactions].sort((a, b) => (b.dateObj?.getTime() ?? 0) - (a.dateObj?.getTime() ?? 0)));
-      showToast('Success', `${newFilesCount} file(s) added.`, 'default');
+      const existingDataKeys = new Set(allData.map(d => d.rawLine));
+      const uniqueNewTransactions = newTransactions.filter(t => !existingDataKeys.has(t.rawLine));
+      
+      setAllData(prev => [...prev, ...uniqueNewTransactions].sort((a, b) => (b.dateObj?.getTime() ?? 0) - (a.dateObj?.getTime() ?? 0)));
+      showToast('Success', `${newFilesCount} file(s) added, ${uniqueNewTransactions.length} unique transactions imported.`, 'default');
     }
     
     setIsLoading(false);
@@ -253,7 +256,7 @@ export default function Home() {
       fileInputRef.current.value = '';
     }
 
-  }, [parsePDF, showToast, uploadedFiles]);
+  }, [parsePDF, showToast, uploadedFiles, allData]);
   
   const removeFile = useCallback((fileName: string) => {
     setUploadedFiles(prev => {
