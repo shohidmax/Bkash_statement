@@ -7,6 +7,10 @@ export default {
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
+  plugins: [require('daisyui'), require('tailwindcss-animate')],
+  daisyui: {
+    themes: ["night"],
+  },
   theme: {
     extend: {
       fontFamily: {
@@ -95,5 +99,4 @@ export default {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
 } satisfies Config;
