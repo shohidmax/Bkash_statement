@@ -13,13 +13,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme="night" suppressHydrationWarning>
+    <html lang="en" data-theme="night">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="font-body antialiased min-h-screen flex flex-col bg-base-300 text-slate-300">
+      <body className="font-body antialiased min-h-screen flex flex-col bg-base-300 text-slate-300" suppressHydrationWarning>
         <div className="navbar bg-base-100 shadow-md border-b border-base-content/10 sticky top-0 z-30">
           <div className="flex-1">
             <a className="btn btn-ghost normal-case text-xl text-primary gap-2">
