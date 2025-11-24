@@ -38,28 +38,33 @@ const ResultsTable: React.FC<ResultsTableProps> = ({ data, showToast }) => {
                 </td>
               </tr>
             ) : (
-              data.map((row, index) => (
-                <tr key={`${row.trxId}-${index}`} className="hover group">
-                  <td className="whitespace-nowrap opacity-80">{row.date}</td>
-                  <td className="text-primary font-medium">{row.type}</td>
-                  <td className="min-w-[200px] opacity-90">{row.details}</td>
-                  <td>
-                    {row.trxId && (
-                      <span 
-                        className="cursor-pointer hover:text-primary font-bold tooltip tooltip-right"
-                        data-tip="Click to copy"
-                        onClick={() => handleCopy(row.trxId)}
-                      >
-                        {row.trxId}
-                      </span>
-                    )}
-                  </td>
-                  <td className="text-right text-base-content">{row.out}</td>
-                  <td className="text-right text-success">{row.in}</td>
-                  <td className="text-right text-error">{row.charge}</td>
-                  <td className="text-right font-bold">{row.balance}</td>
-                </tr>
-              ))
+              data.map((row, index) => {
+                const prevRow = index > 0 ? data[index - 1] : null;
+                const showTrxId = !prevRow || row.trxId !== prevRow.trxId;
+
+                return (
+                  <tr key={`${row.trxId}-${index}`} className="hover group">
+                    <td className="whitespace-nowrap opacity-80">{row.date}</td>
+                    <td className="text-primary font-medium">{row.type}</td>
+                    <td className="min-w-[200px] opacity-90">{row.details}</td>
+                    <td>
+                      {row.trxId && showTrxId && (
+                        <span 
+                          className="cursor-pointer hover:text-primary font-bold tooltip tooltip-right"
+                          data-tip="Click to copy"
+                          onClick={() => handleCopy(row.trxId)}
+                        >
+                          {row.trxId}
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-right text-base-content">{row.out}</td>
+                    <td className="text-right text-success">{row.in}</td>
+                    <td className="text-right text-error">{row.charge}</td>
+                    <td className="text-right font-bold">{row.balance}</td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
