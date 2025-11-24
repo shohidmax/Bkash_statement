@@ -1,12 +1,12 @@
 
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Script from 'next/script';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 
-// Extend the window interface to include jspdf
+// Extend the window interface to include jspdf and pdfjsLib
 declare global {
   interface Window {
     pdfjsLib: any;
@@ -19,7 +19,8 @@ declare global {
 
 export default function Home() {
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
-
+  const [isClient, setIsClient] = useState(false);
+  
   const allData = useRef<any[]>([]);
   const currentData = useRef<any[]>([]);
   const uploadedFiles = useRef(new Set<string>());
@@ -63,69 +64,337 @@ export default function Home() {
     }
     setScriptsLoaded(true);
   };
-  
+
   useEffect(() => {
-    if (!scriptsLoaded) return;
+    setIsClient(true);
+  }, []);
 
-    const showToast = (msg: string, type = 'alert-info') => {
-      if (!ui.toastContainer.current) return;
-      const t = document.createElement('div');
-      t.className = `alert ${type} shadow-lg rounded-lg mb-2 border border-base-content/10 p-2 text-sm`;
-      t.innerHTML = `<span>${msg}</span>`;
-      ui.toastContainer.current.appendChild(t);
-      setTimeout(() => t.remove(), 3000);
+  const showToast = useCallback((msg: string, type = 'alert-info') => {
+    if (!ui.toastContainer.current) return;
+    const t = document.createElement('div');
+    t.className = `alert ${type} shadow-lg rounded-lg mb-2 border border-base-content/10 p-2 text-sm`;
+    t.innerHTML = `<span>${msg}</span>`;
+    ui.toastContainer.current.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+  }, []);
+
+  const updateUI = useCallback((hasData: boolean) => {
+    const method = hasData ? 'remove' : 'add';
+    ui.emptyState.current?.classList[method]('hidden');
+    if (ui.resultContainer.current) {
+        ui.resultContainer.current.classList.toggle('hidden', !hasData);
+    }
+    if (ui.summary.current) {
+        ui.summary.current.classList.toggle('hidden', !hasData);
+    }
+    if (ui.fileListSection.current) {
+        ui.fileListSection.current.classList.toggle('hidden', uploadedFiles.current.size === 0);
     }
     
-    const updateUI = (hasData: boolean) => {
-        const method = hasData ? 'remove' : 'add';
-        ui.emptyState.current?.classList[method]('hidden');
-        if (ui.resultContainer.current) {
-            ui.resultContainer.current.classList.toggle('hidden', !hasData);
-        }
-        if (ui.summary.current) {
-            ui.summary.current.classList.toggle('hidden', !hasData);
-        }
-        if (ui.fileListSection.current) {
-            ui.fileListSection.current.classList.toggle('hidden', uploadedFiles.current.size === 0);
-        }
-        
-        [ui.filterInput, ui.mobileFilter, ui.typeFilter, ui.startDate, ui.endDate, ui.clearBtn, ui.exportCsvBtn, ui.exportPdfBtn].forEach(el => {
-            if (el.current) el.current.disabled = !hasData
-        });
-        if(!hasData && ui.uploader.current) ui.uploader.current.value = '';
-    }
+    [ui.filterInput, ui.mobileFilter, ui.typeFilter, ui.startDate, ui.endDate, ui.clearBtn, ui.exportCsvBtn, ui.exportPdfBtn].forEach(el => {
+        if (el.current) el.current.disabled = !hasData
+    });
+    if(!hasData && ui.uploader.current) ui.uploader.current.value = '';
+  }, []);
 
-    const updateFileList = () => {
-        if (!ui.fileListContainer.current) return;
-        ui.fileListContainer.current.innerHTML = '';
-        uploadedFiles.current.forEach(fileName => {
-            const badge = document.createElement('div');
-            badge.className = 'badge badge-neutral gap-2 p-3';
-            const fileNameStr = String(fileName);
-            badge.innerHTML = `
-              <span>${fileNameStr}</span>
-              <button class="btn btn-xs btn-circle btn-ghost" data-filename="${fileNameStr}">✕</button>
-            `;
-            ui.fileListContainer.current?.appendChild(badge);
-        });
-    };
+  const updateFileList = useCallback(() => {
+      if (!ui.fileListContainer.current) return;
+      ui.fileListContainer.current.innerHTML = '';
+      uploadedFiles.current.forEach(fileName => {
+          const badge = document.createElement('div');
+          badge.className = 'badge badge-neutral gap-2 p-3';
+          const fileNameStr = String(fileName);
+          badge.innerHTML = `
+            <span>${fileNameStr}</span>
+            <button class="btn btn-xs btn-circle btn-ghost" data-filename="${fileNameStr}">✕</button>
+          `;
+          ui.fileListContainer.current?.appendChild(badge);
+      });
+  }, []);
+  
+  const parseAmount = (str: string) => {
+      if (!str) return 0;
+      const clean = str.replace(/,/g, '').replace(/\s/g, '');
+      return parseFloat(clean) || 0;
+  }
 
-    const removeFile = (fileName: string) => {
-        uploadedFiles.current.delete(fileName);
-        allData.current = allData.current.filter((d: any) => d.fileName !== fileName);
-        
-        if (allData.current.length === 0) {
-            currentData.current = [];
-            updateUI(false);
-        } else {
-            allData.current.sort((a: any, b: any) => b.dateObj - a.dateObj);
-            updateTypeDropdown();
-            applyFilter(); 
+  const calculateSummary = useCallback((data: any[]) => {
+      let tIn = 0, tOut = 0, tCharge = 0;
+      data.forEach(row => {
+          tOut += parseAmount(row.out);
+          tIn += parseAmount(row.in);
+          tCharge += parseAmount(row.charge);
+      });
+      const fmt = (num: number) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if(ui.sumIn.current) ui.sumIn.current.textContent = fmt(tIn);
+      if(ui.sumOut.current) ui.sumOut.current.textContent = fmt(tOut);
+      if(ui.sumCharge.current) ui.sumCharge.current.textContent = fmt(tCharge);
+  }, []);
+  
+  const renderTable = useCallback((data: any[]) => {
+      if(!ui.tableBody.current || !ui.totalCount.current || !ui.filteredCount.current) return;
+      ui.tableBody.current.innerHTML = '';
+      ui.totalCount.current.textContent = String(allData.current.length);
+      ui.filteredCount.current.textContent = String(data.length);
+      
+      calculateSummary(data);
+
+      if(!data.length) {
+          ui.tableBody.current.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/50">No matching records.</td></tr>';
+          return;
+      }
+
+      const frag = document.createDocumentFragment();
+      data.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover group';
+          
+          const add = (txt: string, cls='') => {
+              const td = document.createElement('td');
+              td.className = cls;
+              td.textContent = txt || '';
+              tr.appendChild(td);
+          };
+
+          add(row.date, 'whitespace-nowrap opacity-80');
+          add(row.type, 'text-primary font-medium');
+          add(row.details, 'min-w-[200px] opacity-90');
+          
+          const trxTd = document.createElement('td');
+          if(row.trxId) {
+              const sp = document.createElement('span');
+              sp.className = 'cursor-pointer hover:text-primary font-bold tooltip tooltip-right';
+              sp.setAttribute('data-tip', 'Click to copy');
+              sp.textContent = row.trxId;
+              sp.onclick = () => { navigator.clipboard.writeText(row.trxId); showToast('Copied!', 'alert-success'); };
+              trxTd.appendChild(sp);
+          }
+          tr.appendChild(trxTd);
+
+          add(row.out, 'text-right text-base-content');
+          add(row.in, 'text-right text-success');
+          add(row.charge, 'text-right text-error');
+          add(row.balance, 'text-right font-bold');
+          frag.appendChild(tr);
+      });
+      ui.tableBody.current.appendChild(frag);
+  }, [showToast, calculateSummary]);
+
+  const applyFilter = useCallback(() => {
+    const txt = ui.filterInput.current?.value.toLowerCase().trim() || '';
+    const mobile = ui.mobileFilter.current?.value.trim() || '';
+    const type = ui.typeFilter.current?.value || '';
+    const s = ui.startDate.current?.value ? new Date(ui.startDate.current.value) : null;
+    const e = ui.endDate.current?.value ? new Date(ui.endDate.current.value) : null;
+    if(e) e.setHours(23, 59, 59);
+
+    currentData.current = allData.current.filter((d: any) => {
+        const matchTxt = !txt || d.rawLine.toLowerCase().includes(txt);
+        const matchType = !type || d.type === type;
+        const matchMobile = !mobile || d.rawLine.includes(mobile);
+        let matchDate = true;
+        if(d.dateObj) {
+            if(s && d.dateObj < s) matchDate = false;
+            if(e && d.dateObj > e) matchDate = false;
         }
-        updateFileList();
-        showToast(`Removed ${fileName}`, 'alert-warning');
-    };
-    
+        return matchTxt && matchMobile && matchType && matchDate;
+    });
+    renderTable(currentData.current);
+  }, [renderTable]);
+
+  const updateTypeDropdown = useCallback(() => {
+      const types = [...new Set(allData.current.map((d: any) => d.type).filter(Boolean))].sort();
+      if(ui.typeFilter.current) {
+          ui.typeFilter.current.innerHTML = '<option value="">All Types</option>';
+          types.forEach((t: any) => {
+              const opt = document.createElement('option');
+              opt.value = t;
+              opt.textContent = t;
+              ui.typeFilter.current?.appendChild(opt);
+          });
+      }
+  }, []);
+
+  const removeFile = useCallback((fileName: string) => {
+      uploadedFiles.current.delete(fileName);
+      allData.current = allData.current.filter((d: any) => d.fileName !== fileName);
+      
+      if (allData.current.length === 0) {
+          currentData.current = [];
+          updateUI(false);
+      } else {
+          allData.current.sort((a: any, b: any) => b.dateObj - a.dateObj);
+          updateTypeDropdown();
+          applyFilter(); 
+      }
+      updateFileList();
+      showToast(`Removed ${fileName}`, 'alert-warning');
+  }, [applyFilter, showToast, updateFileList, updateTypeDropdown, updateUI]);
+  
+  const parseDate = useCallback((str: string) => {
+      const m = str.match(/(\d{2})-(\w{3})-(\d{2})/);
+      if(!m) return null;
+      try {
+          const d = parseInt(m[1]), mo = monthMap[m[2] as keyof typeof monthMap], y = 2000 + parseInt(m[3]);
+          return (mo !== undefined) ? new Date(y, mo, d) : null;
+      } catch(e) { return null; }
+  }, [monthMap]);
+
+  const parsePDF = useCallback(async (file: File, pwd: any = null) => {
+      if (!window.pdfjsLib) {
+          showToast('PDF library not loaded yet.', 'alert-error');
+          return [];
+      }
+      const buf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf), password: pwd }).promise;
+      const rows: any[] = [];
+      
+      const cols = { date: 80, type: 160, details: 300, out: 380, in: 460, charge: 510 };
+      
+      for(let p=1; p<=pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          if(!content.items.length) continue;
+          
+          const lines: { [key: number]: any[] } = {};
+          content.items.forEach((i: any) => {
+              const y = Math.round(i.transform[5]);
+              if(!lines[y]) lines[y]=[];
+              lines[y].push(i);
+          });
+          
+          const sortedY = Object.keys(lines).map(Number).sort((a,b)=>b-a);
+          const tempRows = sortedY.map(y => {
+              const items = lines[y].sort((a,b)=>a.transform[4]-b.transform[4]);
+              return { y, items, str: items.map(i=>i.str).join(' '), date: parseDate(items.map(i=>i.str).join(' ')) };
+          });
+
+          for(let i=0; i<tempRows.length; i++) {
+              const r1 = tempRows[i];
+              if(!r1.date) continue;
+              
+              let r2 = null;
+              if(i+1 < tempRows.length) {
+                  const next = tempRows[i+1];
+                  if(!next.date && Math.abs(Number(r1.y) - Number(next.y)) < 20) r2 = next;
+              }
+
+              const obj: any = { fileName: file.name, date:'', type:'', details:'', out:'', in:'', charge:'', balance:'', trxId:'', rawLine: r1.str+(r2?' '+r2.str:''), dateObj: r1.date };
+              
+              const map = (items: any[]) => items.forEach(it => {
+                  const x = it.transform[4], s = it.str.trim();
+                  if(!s) return;
+                  if(x < cols.date) obj.date += s+' ';
+                  else if(x < cols.type) obj.type += s+' ';
+                  else if(x < cols.details) obj.details += s+' ';
+                  else if(x < cols.out) obj.out += s;
+                  else if(x < cols.in) obj.in += s;
+                  else if(x < cols.charge) obj.charge += s;
+                  else obj.balance += s;
+              });
+              
+              map(r1.items);
+              if(r2) { map(r2.items); i++; }
+              
+              ['date','details','type'].forEach(k => obj[k]=obj[k].trim());
+              const m = obj.details.match(/TRX ID:\s*([A-Z0-9]+)/i);
+              if(m) { obj.trxId = m[1]; obj.details = obj.details.replace(m[0], '').trim(); }
+              rows.push(obj);
+          }
+      }
+      return rows;
+  }, [parseDate, showToast]);
+
+  const onUploaderChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if(!files?.length) return;
+      ui.loader.current?.classList.remove('hidden');
+      ui.emptyState.current?.classList.add('hidden');
+      
+      let cnt = 0;
+      for(const f of Array.from(files)) {
+          if(f.type !== 'application/pdf') continue;
+          if(uploadedFiles.current.has(f.name)) continue; 
+
+          try {
+              const r = await parsePDF(f);
+              allData.current.push(...r);
+              uploadedFiles.current.add(f.name);
+              cnt++;
+          } catch(err: any) {
+              if(err.name === 'PasswordException') {
+                  try {
+                      const pwd = await new Promise<string>((res, rej) => {
+                          if(ui.passwordInput.current) ui.passwordInput.current.value=''; 
+                          if(ui.passwordError.current) ui.passwordError.current.classList.add('hidden'); 
+                          ui.passwordModal.current?.showModal();
+                          if(ui.submitPassBtn.current) ui.submitPassBtn.current.onclick = () => { if(ui.passwordInput.current?.value) res(ui.passwordInput.current.value); };
+                          if(ui.cancelPassBtn.current) ui.cancelPassBtn.current.onclick = () => { ui.passwordModal.current?.close(); rej('Canceled'); };
+                      });
+                      ui.passwordModal.current?.close();
+                      const r = await parsePDF(f, pwd);
+                      allData.current.push(...r);
+                      uploadedFiles.current.add(f.name);
+                      cnt++;
+                  } catch(e) { if(e !== 'Canceled') showToast('Wrong Password', 'alert-error'); }
+              } else { showToast('Error: '+f.name, 'alert-error'); console.error(err); }
+          }
+      }
+      ui.loader.current?.classList.add('hidden');
+      if(cnt || allData.current.length) {
+          allData.current.sort((a: any, b: any) => b.dateObj - a.dateObj);
+          updateTypeDropdown();
+          updateFileList();
+          currentData.current = allData.current;
+          renderTable(allData.current);
+          updateUI(true);
+          if(cnt > 0) showToast(`${cnt} file(s) added`, 'alert-success');
+      } else updateUI(false);
+  }, [parsePDF, showToast, updateFileList, updateTypeDropdown, updateUI, renderTable]);
+
+  const onClear = useCallback(() => { 
+      allData.current = []; 
+      currentData.current = []; 
+      uploadedFiles.current.clear();
+      if(ui.mobileFilter.current) ui.mobileFilter.current.value = '';
+      if(ui.filterInput.current) ui.filterInput.current.value = ''; 
+      updateFileList();
+      renderTable([]); 
+      updateUI(false); 
+  }, [renderTable, updateFileList, updateUI]);
+
+  const onExportCsv = useCallback(() => {
+      if(!currentData.current.length) return;
+      const head = ['File','Date','Type','Details','TRX ID','Out','In','Charge','Balance'];
+      const rows = [head.join(',')];
+      currentData.current.forEach((r: any) => rows.push([`"${r.fileName}"`,`"${r.date}"`,`"${r.type}"`,`"${r.details}"`,`"${r.trxId}"`,r.out,r.in,r.charge,r.balance].join(',')));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type:'text/csv'}));
+      a.download = 'export.csv'; a.click();
+  }, []);
+
+  const onExportPdf = useCallback(() => {
+      if(!currentData.current.length || !window.jspdf) return;
+      const doc = new window.jspdf.jsPDF({orientation:'landscape'});
+      doc.text("Statement", 14, 15);
+      (doc as any).autoTable({
+          head: [['Date','Type','Details','TRX ID','Out','In','Charge','Balance']],
+          body: currentData.current.map((r: any) => [r.date,r.type,r.details,r.trxId,r.out,r.in,r.charge,r.balance]),
+          startY: 20, theme:'grid', styles:{fontSize:8}
+      });
+      doc.save('export.pdf');
+  }, []);
+
+  const onSaveCache = useCallback(() => {
+    localStorage.setItem('cachePref', 'set');
+    ui.cacheModal.current?.close();
+  }, []);
+
+  useEffect(() => {
+    if (!isClient || !scriptsLoaded) return;
+
+    if(!localStorage.getItem('cachePref')) ui.cacheModal.current?.showModal();
+
     const onRemoveFileClick = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
         if(target.tagName === 'BUTTON' && target.dataset.filename) {
@@ -133,325 +402,42 @@ export default function Home() {
         }
     }
 
-    const parseDate = (str: string) => {
-        const m = str.match(/(\d{2})-(\w{3})-(\d{2})/);
-        if(!m) return null;
-        try {
-            const d = parseInt(m[1]), mo = monthMap[m[2] as keyof typeof monthMap], y = 2000 + parseInt(m[3]);
-            return (mo !== undefined) ? new Date(y, mo, d) : null;
-        } catch(e) { return null; }
-    }
-    
-    const parseAmount = (str: string) => {
-        if (!str) return 0;
-        const clean = str.replace(/,/g, '').replace(/\s/g, '');
-        return parseFloat(clean) || 0;
-    }
-    
-    const calculateSummary = (data: any[]) => {
-        let tIn = 0, tOut = 0, tCharge = 0;
-        data.forEach(row => {
-            tOut += parseAmount(row.out);
-            tIn += parseAmount(row.in);
-            tCharge += parseAmount(row.charge);
-        });
-        const fmt = (num: number) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        if(ui.sumIn.current) ui.sumIn.current.textContent = fmt(tIn);
-        if(ui.sumOut.current) ui.sumOut.current.textContent = fmt(tOut);
-        if(ui.sumCharge.current) ui.sumCharge.current.textContent = fmt(tCharge);
-    }
-
-    const updateTypeDropdown = () => {
-        const types = [...new Set(allData.current.map((d: any) => d.type).filter(Boolean))].sort();
-        if(ui.typeFilter.current) {
-            ui.typeFilter.current.innerHTML = '<option value="">All Types</option>';
-            types.forEach((t: any) => {
-                const opt = document.createElement('option');
-                opt.value = t;
-                opt.textContent = t;
-                ui.typeFilter.current?.appendChild(opt);
-            });
-        }
-    }
-
-    const renderTable = (data: any[]) => {
-        if(!ui.tableBody.current || !ui.totalCount.current || !ui.filteredCount.current) return;
-        ui.tableBody.current.innerHTML = '';
-        ui.totalCount.current.textContent = String(allData.current.length);
-        ui.filteredCount.current.textContent = String(data.length);
-        
-        calculateSummary(data);
-
-        if(!data.length) {
-            ui.tableBody.current.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-base-content/50">No matching records.</td></tr>';
-            return;
-        }
-
-        const frag = document.createDocumentFragment();
-        data.forEach(row => {
-            const tr = document.createElement('tr');
-            tr.className = 'hover group';
-            
-            const add = (txt: string, cls='') => {
-                const td = document.createElement('td');
-                td.className = cls;
-                td.textContent = txt || '';
-                tr.appendChild(td);
-            };
-
-            add(row.date, 'whitespace-nowrap opacity-80');
-            add(row.type, 'text-primary font-medium');
-            add(row.details, 'min-w-[200px] opacity-90');
-            
-            const trxTd = document.createElement('td');
-            if(row.trxId) {
-                const sp = document.createElement('span');
-                sp.className = 'cursor-pointer hover:text-primary font-bold tooltip tooltip-right';
-                sp.setAttribute('data-tip', 'Click to copy');
-                sp.textContent = row.trxId;
-                sp.onclick = () => { navigator.clipboard.writeText(row.trxId); showToast('Copied!', 'alert-success'); };
-                trxTd.appendChild(sp);
-            }
-            tr.appendChild(trxTd);
-
-            add(row.out, 'text-right text-base-content');
-            add(row.in, 'text-right text-success');
-            add(row.charge, 'text-right text-error');
-            add(row.balance, 'text-right font-bold');
-            frag.appendChild(tr);
-        });
-        ui.tableBody.current.appendChild(frag);
-    }
-    
-    const applyFilter = () => {
-        const txt = ui.filterInput.current?.value.toLowerCase().trim() || '';
-        const mobile = ui.mobileFilter.current?.value.trim() || '';
-        const type = ui.typeFilter.current?.value || '';
-        const s = ui.startDate.current?.value ? new Date(ui.startDate.current.value) : null;
-        const e = ui.endDate.current?.value ? new Date(ui.endDate.current.value) : null;
-        if(e) e.setHours(23, 59, 59);
-
-        currentData.current = allData.current.filter((d: any) => {
-            const matchTxt = !txt || d.rawLine.toLowerCase().includes(txt);
-            const matchType = !type || d.type === type;
-            const matchMobile = !mobile || d.rawLine.includes(mobile);
-            let matchDate = true;
-            if(d.dateObj) {
-                if(s && d.dateObj < s) matchDate = false;
-                if(e && d.dateObj > e) matchDate = false;
-            }
-            return matchTxt && matchMobile && matchType && matchDate;
-        });
-        renderTable(currentData.current);
-    }
-    
-    const onFilterChange = () => applyFilter();
-    
-    const onClear = () => { 
-        allData.current = []; 
-        currentData.current = []; 
-        uploadedFiles.current.clear();
-        if(ui.mobileFilter.current) ui.mobileFilter.current.value = '';
-        if(ui.filterInput.current) ui.filterInput.current.value = ''; 
-        updateFileList();
-        renderTable([]); 
-        updateUI(false); 
-    };
-
-    const parsePDF = async (file: File, pwd: any = null) => {
-        if (!window.pdfjsLib) {
-            showToast('PDF library not loaded yet.', 'alert-error');
-            return [];
-        }
-        const buf = await file.arrayBuffer();
-        const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf), password: pwd }).promise;
-        const rows: any[] = [];
-        
-        const cols = { date: 80, type: 160, details: 300, out: 380, in: 460, charge: 510 };
-        
-        for(let p=1; p<=pdf.numPages; p++) {
-            const page = await pdf.getPage(p);
-            const content = await page.getTextContent();
-            if(!content.items.length) continue;
-            
-            const lines: { [key: number]: any[] } = {};
-            content.items.forEach((i: any) => {
-                const y = Math.round(i.transform[5]);
-                if(!lines[y]) lines[y]=[];
-                lines[y].push(i);
-            });
-            
-            const sortedY = Object.keys(lines).map(Number).sort((a,b)=>b-a);
-            const tempRows = sortedY.map(y => {
-                const items = lines[y].sort((a,b)=>a.transform[4]-b.transform[4]);
-                return { y, items, str: items.map(i=>i.str).join(' '), date: parseDate(items.map(i=>i.str).join(' ')) };
-            });
-
-            for(let i=0; i<tempRows.length; i++) {
-                const r1 = tempRows[i];
-                if(!r1.date) continue;
-                
-                let r2 = null;
-                if(i+1 < tempRows.length) {
-                    const next = tempRows[i+1];
-                    if(!next.date && Math.abs(Number(r1.y) - Number(next.y)) < 20) r2 = next;
-                }
-
-                const obj: any = { fileName: file.name, date:'', type:'', details:'', out:'', in:'', charge:'', balance:'', trxId:'', rawLine: r1.str+(r2?' '+r2.str:''), dateObj: r1.date };
-                
-                const map = (items: any[]) => items.forEach(it => {
-                    const x = it.transform[4], s = it.str.trim();
-                    if(!s) return;
-                    if(x < cols.date) obj.date += s+' ';
-                    else if(x < cols.type) obj.type += s+' ';
-                    else if(x < cols.details) obj.details += s+' ';
-                    else if(x < cols.out) obj.out += s;
-                    else if(x < cols.in) obj.in += s;
-                    else if(x < cols.charge) obj.charge += s;
-                    else obj.balance += s;
-                });
-                
-                map(r1.items);
-                if(r2) { map(r2.items); i++; }
-                
-                ['date','details','type'].forEach(k => obj[k]=obj[k].trim());
-                const m = obj.details.match(/TRX ID:\s*([A-Z0-9]+)/i);
-                if(m) { obj.trxId = m[1]; obj.details = obj.details.replace(m[0], '').trim(); }
-                rows.push(obj);
-            }
-        }
-        return rows;
-    };
-    
-    const onUploaderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if(!files?.length) return;
-        ui.loader.current?.classList.remove('hidden');
-        ui.emptyState.current?.classList.add('hidden');
-        
-        let cnt = 0;
-        for(const f of Array.from(files)) {
-            if(f.type !== 'application/pdf') continue;
-            if(uploadedFiles.current.has(f.name)) continue; 
-
-            try {
-                const r = await parsePDF(f);
-                allData.current.push(...r);
-                uploadedFiles.current.add(f.name);
-                cnt++;
-            } catch(err: any) {
-                if(err.name === 'PasswordException') {
-                    try {
-                        const pwd = await new Promise<string>((res, rej) => {
-                            if(ui.passwordInput.current) ui.passwordInput.current.value=''; 
-                            if(ui.passwordError.current) ui.passwordError.current.classList.add('hidden'); 
-                            ui.passwordModal.current?.showModal();
-                            if(ui.submitPassBtn.current) ui.submitPassBtn.current.onclick = () => { if(ui.passwordInput.current?.value) res(ui.passwordInput.current.value); };
-                            if(ui.cancelPassBtn.current) ui.cancelPassBtn.current.onclick = () => { ui.passwordModal.current?.close(); rej('Canceled'); };
-                        });
-                        ui.passwordModal.current?.close();
-                        const r = await parsePDF(f, pwd);
-                        allData.current.push(...r);
-                        uploadedFiles.current.add(f.name);
-                        cnt++;
-                    } catch(e) { if(e !== 'Canceled') showToast('Wrong Password', 'alert-error'); }
-                } else { showToast('Error: '+f.name, 'alert-error'); console.error(err); }
-            }
-        }
-        ui.loader.current?.classList.add('hidden');
-        if(cnt || allData.current.length) {
-            allData.current.sort((a: any, b: any) => b.dateObj - a.dateObj);
-            updateTypeDropdown();
-            updateFileList();
-            currentData.current = allData.current;
-            renderTable(allData.current);
-            updateUI(true);
-            if(cnt > 0) showToast(`${cnt} file(s) added`, 'alert-success');
-        } else updateUI(false);
-    };
-    
-    const onExportCsv = () => {
-        if(!currentData.current.length) return;
-        const head = ['File','Date','Type','Details','TRX ID','Out','In','Charge','Balance'];
-        const rows = [head.join(',')];
-        currentData.current.forEach((r: any) => rows.push([`"${r.fileName}"`,`"${r.date}"`,`"${r.type}"`,`"${r.details}"`,`"${r.trxId}"`,r.out,r.in,r.charge,r.balance].join(',')));
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type:'text/csv'}));
-        a.download = 'export.csv'; a.click();
-    };
-
-    const onExportPdf = () => {
-        if(!currentData.current.length || !window.jspdf) return;
-        const doc = new window.jspdf.jsPDF({orientation:'landscape'});
-        doc.text("Statement", 14, 15);
-        (doc as any).autoTable({
-            head: [['Date','Type','Details','TRX ID','Out','In','Charge','Balance']],
-            body: currentData.current.map((r: any) => [r.date,r.type,r.details,r.trxId,r.out,r.in,r.charge,r.balance]),
-            startY: 20, theme:'grid', styles:{fontSize:8}
-        });
-        doc.save('export.pdf');
-    };
-    
-    const onSaveCache = () => {
-      localStorage.setItem('cachePref', 'set');
-      ui.cacheModal.current?.close();
-    }
-    
-    if (ui.fileListContainer.current) {
-      ui.fileListContainer.current.addEventListener('click', onRemoveFileClick as any);
-    }
-    
-    if(!localStorage.getItem('cachePref')) ui.cacheModal.current?.showModal();
-
-    const saveCacheBtnEl = ui.saveCacheBtn.current;
-    saveCacheBtnEl?.addEventListener('click', onSaveCache);
-    
     const filterInputEl = ui.filterInput.current;
     const mobileFilterEl = ui.mobileFilter.current;
     const startDateEl = ui.startDate.current;
     const endDateEl = ui.endDate.current;
     const typeFilterEl = ui.typeFilter.current;
     const clearBtnEl = ui.clearBtn.current;
-    const uploaderEl = ui.uploader.current;
     const exportCsvBtnEl = ui.exportCsvBtn.current;
     const exportPdfBtnEl = ui.exportPdfBtn.current;
     const fileListContainerEl = ui.fileListContainer.current;
+    const saveCacheBtnEl = ui.saveCacheBtn.current;
 
-    filterInputEl?.addEventListener('input', onFilterChange);
-    mobileFilterEl?.addEventListener('input', onFilterChange);
-    startDateEl?.addEventListener('input', onFilterChange);
-    endDateEl?.addEventListener('input', onFilterChange);
-    typeFilterEl?.addEventListener('change', onFilterChange);
+    filterInputEl?.addEventListener('input', applyFilter);
+    mobileFilterEl?.addEventListener('input', applyFilter);
+    startDateEl?.addEventListener('input', applyFilter);
+    endDateEl?.addEventListener('input', applyFilter);
+    typeFilterEl?.addEventListener('change', applyFilter);
     clearBtnEl?.addEventListener('click', onClear);
-    uploaderEl?.addEventListener('change', onUploaderChange);
     exportCsvBtnEl?.addEventListener('click', onExportCsv);
     exportPdfBtnEl?.addEventListener('click', onExportPdf);
-  
-    const onRemoveFileClickHandler = (e: MouseEvent) => {
-        const target = e.target as HTMLElement;
-        if(target.tagName === 'BUTTON' && target.dataset.filename) {
-            removeFile(target.dataset.filename);
-        }
-    }
-    fileListContainerEl?.addEventListener('click', onRemoveFileClickHandler as any);
+    fileListContainerEl?.addEventListener('click', onRemoveFileClick as any);
+    saveCacheBtnEl?.addEventListener('click', onSaveCache);
 
     return () => {
-       saveCacheBtnEl?.removeEventListener('click', onSaveCache);
-       filterInputEl?.removeEventListener('input', onFilterChange);
-       mobileFilterEl?.removeEventListener('input', onFilterChange);
-       startDateEl?.removeEventListener('input', onFilterChange);
-       endDateEl?.removeEventListener('input', onFilterChange);
-       typeFilterEl?.removeEventListener('change', onFilterChange);
+       filterInputEl?.removeEventListener('input', applyFilter);
+       mobileFilterEl?.removeEventListener('input', applyFilter);
+       startDateEl?.removeEventListener('input', applyFilter);
+       endDateEl?.removeEventListener('input', applyFilter);
+       typeFilterEl?.removeEventListener('change', applyFilter);
        clearBtnEl?.removeEventListener('click', onClear);
-       uploaderEl?.removeEventListener('change', onUploaderChange);
        exportCsvBtnEl?.removeEventListener('click', onExportCsv);
        exportPdfBtnEl?.removeEventListener('click', onExportPdf);
-      if (fileListContainerEl) {
-        fileListContainerEl.removeEventListener('click', onRemoveFileClickHandler as any);
-      }
+       fileListContainerEl?.removeEventListener('click', onRemoveFileClick as any);
+       saveCacheBtnEl?.removeEventListener('click', onSaveCache);
     }
 
-  }, [scriptsLoaded]);
+  }, [isClient, scriptsLoaded, applyFilter, onClear, onExportCsv, onExportPdf, removeFile, onSaveCache]);
 
 
   return (
