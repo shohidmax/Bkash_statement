@@ -1,3 +1,22 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "api-routes",
+      "description": "Abstract visualization of API routes",
+      "imageUrl": "https://images.unsplash.com/photo-1596423904329-4772654f70b0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxBUEklMjBhYnN0cmFjdHxlbnwwfHx8fDE3NjM5ODU1OTV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "API abstract"
+    },
+    {
+      "id": "components",
+      "description": "Grid of UI components",
+      "imageUrl": "https://images.unsplash.com/photo-1654965807196-5dbeffb70a47?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxVSSUyMGNvbXBvbmVudHN8ZW58MHx8fHwxNzYzOTg1NTk1fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "UI components"
+    },
+    {
+      "id": "deployment",
+      "description": "Cloud deployment diagram",
+      "imageUrl": "https://images.unsplash.com/photo-1562268860-f314f1973750?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxjbG91ZCUyMGRlcGxveW1lbnR8ZW58MHx8fHwxNzYzOTg1NTk2fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "cloud deployment"
+    }
+  ]
 }
