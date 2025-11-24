@@ -1,7 +1,21 @@
+
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
 import Script from 'next/script';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+
+// Extend the window interface to include jspdf
+declare global {
+  interface Window {
+    pdfjsLib: any;
+    jspdf: {
+      jsPDF: typeof jsPDF;
+      autoTable: any;
+    };
+  }
+}
 
 export default function Home() {
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
@@ -44,13 +58,15 @@ export default function Home() {
   };
 
   const handleScriptsLoaded = () => {
-    (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+    }
     setScriptsLoaded(true);
   };
   
   useEffect(() => {
-    if(!scriptsLoaded) return;
-    
+    if (!scriptsLoaded) return;
+
     const showToast = (msg: string, type = 'alert-info') => {
       if (!ui.toastContainer.current) return;
       const t = document.createElement('div');
@@ -116,8 +132,6 @@ export default function Home() {
             removeFile(target.dataset.filename);
         }
     }
-    ui.fileListContainer.current?.addEventListener('click', onRemoveFileClick as any);
-
 
     const parseDate = (str: string) => {
         const m = str.match(/(\d{2})-(\w{3})-(\d{2})/);
@@ -244,9 +258,13 @@ export default function Home() {
         updateUI(false); 
     };
 
-    const parsePDF = async (file: File, pwd: any =null) => {
+    const parsePDF = async (file: File, pwd: any = null) => {
+        if (!window.pdfjsLib) {
+            showToast('PDF library not loaded yet.', 'alert-error');
+            return [];
+        }
         const buf = await file.arrayBuffer();
-        const pdf = await (window as any).pdfjsLib.getDocument({ data: new Uint8Array(buf), password: pwd }).promise;
+        const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf), password: pwd }).promise;
         const rows: any[] = [];
         
         const cols = { date: 80, type: 160, details: 300, out: 380, in: 460, charge: 510 };
@@ -326,7 +344,7 @@ export default function Home() {
                     try {
                         const pwd = await new Promise<string>((res, rej) => {
                             if(ui.passwordInput.current) ui.passwordInput.current.value=''; 
-                            ui.passwordError.current?.classList.add('hidden'); 
+                            if(ui.passwordError.current) ui.passwordError.current.classList.add('hidden'); 
                             ui.passwordModal.current?.showModal();
                             if(ui.submitPassBtn.current) ui.submitPassBtn.current.onclick = () => { if(ui.passwordInput.current?.value) res(ui.passwordInput.current.value); };
                             if(ui.cancelPassBtn.current) ui.cancelPassBtn.current.onclick = () => { ui.passwordModal.current?.close(); rej('Canceled'); };
@@ -337,7 +355,7 @@ export default function Home() {
                         uploadedFiles.current.add(f.name);
                         cnt++;
                     } catch(e) { if(e !== 'Canceled') showToast('Wrong Password', 'alert-error'); }
-                } else { showToast('Error: '+f.name, 'alert-error'); }
+                } else { showToast('Error: '+f.name, 'alert-error'); console.error(err); }
             }
         }
         ui.loader.current?.classList.add('hidden');
@@ -363,8 +381,8 @@ export default function Home() {
     };
 
     const onExportPdf = () => {
-        if(!currentData.current.length) return;
-        const doc = new (window as any).jspdf.jsPDF({orientation:'landscape'});
+        if(!currentData.current.length || !window.jspdf) return;
+        const doc = new window.jspdf.jsPDF({orientation:'landscape'});
         doc.text("Statement", 14, 15);
         (doc as any).autoTable({
             head: [['Date','Type','Details','TRX ID','Out','In','Charge','Balance']],
@@ -374,254 +392,260 @@ export default function Home() {
         doc.save('export.pdf');
     };
     
-    const onSaveCache = () => localStorage.setItem('cachePref', 'set');
+    const onSaveCache = () => {
+      localStorage.setItem('cachePref', 'set');
+      ui.cacheModal.current?.close();
+    }
     
-    // Mount
-    useEffect(() => {
-      if (!scriptsLoaded) return;
-        if(!localStorage.getItem('cachePref')) ui.cacheModal.current?.showModal();
-        ui.saveCacheBtn.current?.addEventListener('click', onSaveCache);
-        
-        const filterInputEl = ui.filterInput.current;
-        const mobileFilterEl = ui.mobileFilter.current;
-        const startDateEl = ui.startDate.current;
-        const endDateEl = ui.endDate.current;
-        const typeFilterEl = ui.typeFilter.current;
-        const clearBtnEl = ui.clearBtn.current;
-        const uploaderEl = ui.uploader.current;
-        const exportCsvBtnEl = ui.exportCsvBtn.current;
-        const exportPdfBtnEl = ui.exportPdfBtn.current;
-        const fileListContainerEl = ui.fileListContainer.current;
+    if (ui.fileListContainer.current) {
+      ui.fileListContainer.current.addEventListener('click', onRemoveFileClick as any);
+    }
+    
+    if(!localStorage.getItem('cachePref')) ui.cacheModal.current?.showModal();
 
-        filterInputEl?.addEventListener('input', onFilterChange);
-        mobileFilterEl?.addEventListener('input', onFilterChange);
-        startDateEl?.addEventListener('input', onFilterChange);
-        endDateEl?.addEventListener('input', onFilterChange);
-        typeFilterEl?.addEventListener('change', onFilterChange);
-        clearBtnEl?.addEventListener('click', onClear);
-        uploaderEl?.addEventListener('change', onUploaderChange);
-        exportCsvBtnEl?.addEventListener('click', onExportCsv);
-        exportPdfBtnEl?.addEventListener('click', onExportPdf);
-      
-        const onRemoveFileClick = (e: MouseEvent) => {
-            const target = e.target as HTMLElement;
-            if(target.tagName === 'BUTTON' && target.dataset.filename) {
-                removeFile(target.dataset.filename);
-            }
+    const saveCacheBtnEl = ui.saveCacheBtn.current;
+    saveCacheBtnEl?.addEventListener('click', onSaveCache);
+    
+    const filterInputEl = ui.filterInput.current;
+    const mobileFilterEl = ui.mobileFilter.current;
+    const startDateEl = ui.startDate.current;
+    const endDateEl = ui.endDate.current;
+    const typeFilterEl = ui.typeFilter.current;
+    const clearBtnEl = ui.clearBtn.current;
+    const uploaderEl = ui.uploader.current;
+    const exportCsvBtnEl = ui.exportCsvBtn.current;
+    const exportPdfBtnEl = ui.exportPdfBtn.current;
+    const fileListContainerEl = ui.fileListContainer.current;
+
+    filterInputEl?.addEventListener('input', onFilterChange);
+    mobileFilterEl?.addEventListener('input', onFilterChange);
+    startDateEl?.addEventListener('input', onFilterChange);
+    endDateEl?.addEventListener('input', onFilterChange);
+    typeFilterEl?.addEventListener('change', onFilterChange);
+    clearBtnEl?.addEventListener('click', onClear);
+    uploaderEl?.addEventListener('change', onUploaderChange);
+    exportCsvBtnEl?.addEventListener('click', onExportCsv);
+    exportPdfBtnEl?.addEventListener('click', onExportPdf);
+  
+    const onRemoveFileClickHandler = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if(target.tagName === 'BUTTON' && target.dataset.filename) {
+            removeFile(target.dataset.filename);
         }
-        fileListContainerEl?.addEventListener('click', onRemoveFileClick as any);
+    }
+    fileListContainerEl?.addEventListener('click', onRemoveFileClickHandler as any);
 
-        return () => {
-          // Cleanup
-           ui.saveCacheBtn.current?.removeEventListener('click', onSaveCache);
-           filterInputEl?.removeEventListener('input', onFilterChange);
-           mobileFilterEl?.removeEventListener('input', onFilterChange);
-           startDateEl?.removeEventListener('input', onFilterChange);
-           endDateEl?.removeEventListener('input', onFilterChange);
-           typeFilterEl?.removeEventListener('change', onFilterChange);
-           clearBtnEl?.removeEventListener('click', onClear);
-           uploaderEl?.removeEventListener('change', onUploaderChange);
-           exportCsvBtnEl?.removeEventListener('click', onExportCsv);
-           exportPdfBtnEl?.removeEventListener('click', onExportPdf);
-          if (fileListContainerEl) {
-            fileListContainerEl.removeEventListener('click', onRemoveFileClick as any);
-          }
-        }
+    return () => {
+       saveCacheBtnEl?.removeEventListener('click', onSaveCache);
+       filterInputEl?.removeEventListener('input', onFilterChange);
+       mobileFilterEl?.removeEventListener('input', onFilterChange);
+       startDateEl?.removeEventListener('input', onFilterChange);
+       endDateEl?.removeEventListener('input', onFilterChange);
+       typeFilterEl?.removeEventListener('change', onFilterChange);
+       clearBtnEl?.removeEventListener('click', onClear);
+       uploaderEl?.removeEventListener('change', onUploaderChange);
+       exportCsvBtnEl?.removeEventListener('click', onExportCsv);
+       exportPdfBtnEl?.removeEventListener('click', onExportPdf);
+      if (fileListContainerEl) {
+        fileListContainerEl.removeEventListener('click', onRemoveFileClickHandler as any);
+      }
+    }
 
-    }, [scriptsLoaded]);
+  }, [scriptsLoaded]);
 
 
   return (
     <>
-      <Script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" onReady={handleScriptsLoaded} />
-      <Script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" />
-      <Script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" />
-        <div className="card bg-base-100 shadow-xl border border-base-content/10">
-            <div className="card-body p-4 md:p-6">
-                
-                {/* Header & Upload */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-base-content/10 gap-4">
-                    <div>
-                    <h2 className="card-title text-2xl text-base-content">PDF Content Filter</h2>
-                    <p className="text-base-content/60 text-sm mt-1">Analyze your statements securely.</p>
-                    </div>
-                    <div className="w-full md:w-auto">
-                    <label className="form-control w-full md:max-w-xs">
-                        <div className="label p-1">
-                        <span className="label-text-alt text-base-content/60">Upload PDF File(s)</span>
-                        </div>
-                        <input type="file" id="pdfUploader" ref={ui.uploader} className="file-input file-input-bordered file-input-primary w-full file-input-sm" accept="application/pdf" multiple />
-                    </label>
-                    </div>
-                </div>
+      <Script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" onReady={handleScriptsLoaded} strategy="afterInteractive" />
+      <Script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" strategy="afterInteractive" />
+      <Script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" strategy="afterInteractive" />
 
-                {/* File List Section */}
-                <div id="fileListSection" ref={ui.fileListSection} className="mb-6 hidden">
-                    <h3 className="text-sm font-bold text-base-content/70 mb-2 uppercase tracking-wider">Uploaded Files:</h3>
-                    <div id="fileListContainer" ref={ui.fileListContainer} className="flex flex-wrap gap-2">
-                    {/* File tags will appear here */}
-                    </div>
-                </div>
+      <div className="card bg-base-100 shadow-xl border border-base-content/10">
+          <div className="card-body p-4 md:p-6">
+              
+              {/* Header & Upload */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-base-content/10 gap-4">
+                  <div>
+                  <h2 className="card-title text-2xl text-base-content">PDF Content Filter</h2>
+                  <p className="text-base-content/60 text-sm mt-1">Analyze your statements securely.</p>
+                  </div>
+                  <div className="w-full md:w-auto">
+                  <label className="form-control w-full md:max-w-xs">
+                      <div className="label p-1">
+                      <span className="label-text-alt text-base-content/60">Upload PDF File(s)</span>
+                      </div>
+                      <input type="file" id="pdfUploader" ref={ui.uploader} onChange={onUploaderChange} className="file-input file-input-bordered file-input-primary w-full file-input-sm" accept="application/pdf" multiple />
+                  </label>
+                  </div>
+              </div>
 
-                {/* Filter Controls */}
-                <div className="bg-base-200/50 p-4 rounded-xl border border-base-content/5">
-                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                    
-                    {/* Text Filter */}
-                    <div className="form-control">
-                        <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">Search</span></label>
-                        <input id="filterInput" ref={ui.filterInput} type="text" placeholder="Text or ID..." className="input input-bordered w-full input-sm" disabled />
-                    </div>
+              {/* File List Section */}
+              <div id="fileListSection" ref={ui.fileListSection} className="mb-6 hidden">
+                  <h3 className="text-sm font-bold text-base-content/70 mb-2 uppercase tracking-wider">Uploaded Files:</h3>
+                  <div id="fileListContainer" ref={ui.fileListContainer} className="flex flex-wrap gap-2">
+                  {/* File tags will appear here */}
+                  </div>
+              </div>
 
-                    {/* Mobile Filter */}
-                    <div className="form-control">
-                        <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">Mobile No</span></label>
-                        <input id="mobileFilter" ref={ui.mobileFilter} type="text" placeholder="017..." className="input input-bordered w-full input-sm" disabled />
-                    </div>
+              {/* Filter Controls */}
+              <div className="bg-base-200/50 p-4 rounded-xl border border-base-content/5">
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  
+                  {/* Text Filter */}
+                  <div className="form-control">
+                      <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">Search</span></label>
+                      <input id="filterInput" ref={ui.filterInput} type="text" placeholder="Text or ID..." className="input input-bordered w-full input-sm" disabled />
+                  </div>
 
-                    {/* Type Filter */}
-                    <div className="form-control">
-                        <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">Type</span></label>
-                        <select id="typeFilter" ref={ui.typeFilter} className="select select-bordered w-full select-sm" disabled>
-                        <option value="">All Types</option>
-                        </select>
-                    </div>
+                  {/* Mobile Filter */}
+                  <div className="form-control">
+                      <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">Mobile No</span></label>
+                      <input id="mobileFilter" ref={ui.mobileFilter} type="text" placeholder="017..." className="input input-bordered w-full input-sm" disabled />
+                  </div>
 
-                    {/* Start Date */}
-                    <div className="form-control">
-                        <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">From</span></label>
-                        <input id="startDate" ref={ui.startDate} type="date" className="input input-bordered w-full input-sm" disabled />
-                    </div>
-                    
-                    {/* End Date */}
-                    <div className="form-control">
-                        <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">To</span></label>
-                        <input id="endDate" ref={ui.endDate} type="date" className="input input-bordered w-full input-sm" disabled />
-                    </div>
+                  {/* Type Filter */}
+                  <div className="form-control">
+                      <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">Type</span></label>
+                      <select id="typeFilter" ref={ui.typeFilter} className="select select-bordered w-full select-sm" disabled>
+                      <option value="">All Types</option>
+                      </select>
+                  </div>
 
-                    {/* Clear Button */}
-                    <div className="form-control flex flex-row items-end">
-                        <button id="clearButton" ref={ui.clearBtn} className="btn btn-ghost btn-sm w-full border-base-content/20" disabled>
-                        Clear All
-                        </button>
-                    </div>
-                    </div>
-                    
-                    {/* Export Buttons */}
-                    <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-base-content/5">
-                    <button id="exportButton" ref={ui.exportCsvBtn} className="btn btn-success btn-outline btn-sm gap-2" disabled>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        Export CSV
-                    </button>
-                    <button id="exportPdfButton" ref={ui.exportPdfBtn} className="btn btn-error btn-outline btn-sm gap-2" disabled>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                        Export PDF
-                    </button>
-                    </div>
-                </div>
-                
-                {/* Loading Spinner */}
-                <div id="loadingSpinner" ref={ui.loader} className="flex flex-col items-center justify-center my-12 hidden">
-                    <span className="loading loading-bars loading-lg text-primary"></span>
-                    <p className="mt-3 text-base-content/60 font-medium animate-pulse">Processing PDF...</p>
-                </div>
+                  {/* Start Date */}
+                  <div className="form-control">
+                      <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">From</span></label>
+                      <input id="startDate" ref={ui.startDate} type="date" className="input input-bordered w-full input-sm" disabled />
+                  </div>
+                  
+                  {/* End Date */}
+                  <div className="form-control">
+                      <label className="label py-1"><span className="label-text text-xs uppercase font-bold text-base-content/60">To</span></label>
+                      <input id="endDate" ref={ui.endDate} type="date" className="input input-bordered w-full input-sm" disabled />
+                  </div>
 
-                {/* Summary Stats */}
-                <div id="summarySection" ref={ui.summary} className="flex flex-col gap-4 w-full mt-6 hidden">
-                    {/* Counts */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
-                            <div className="stat-title text-xs uppercase font-bold opacity-60">Total Rows</div>
-                            <div id="totalItems" ref={ui.totalCount} className="stat-value text-primary text-xl">0</div>
-                        </div>
-                        <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
-                            <div className="stat-title text-xs uppercase font-bold opacity-60">Filtered Rows</div>
-                            <div id="filteredItems" ref={ui.filteredCount} className="stat-value text-secondary text-xl">0</div>
-                        </div>
-                    </div>
-                    {/* Calculations */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
-                            <div className="stat-title text-xs uppercase font-bold opacity-60 text-success">Total In (Cash In)</div>
-                            <div id="sumIn" ref={ui.sumIn} className="stat-value text-success text-xl">0.00</div>
-                        </div>
-                        <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
-                            <div className="stat-title text-xs uppercase font-bold opacity-60 text-base-content">Total Out (Cash Out)</div>
-                            <div id="sumOut" ref={ui.sumOut} className="stat-value text-base-content text-xl">0.00</div>
-                        </div>
-                        <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
-                            <div className="stat-title text-xs uppercase font-bold opacity-60 text-error">Total Charge</div>
-                            <div id="sumCharge" ref={ui.sumCharge} className="stat-value text-error text-xl">0.00</div>
-                        </div>
-                    </div>
-                </div>
+                  {/* Clear Button */}
+                  <div className="form-control flex flex-row items-end">
+                      <button id="clearButton" ref={ui.clearBtn} className="btn btn-ghost btn-sm w-full border-base-content/20" disabled>
+                      Clear All
+                      </button>
+                  </div>
+                  </div>
+                  
+                  {/* Export Buttons */}
+                  <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-base-content/5">
+                  <button id="exportButton" ref={ui.exportCsvBtn} className="btn btn-success btn-outline btn-sm gap-2" disabled>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                      Export CSV
+                  </button>
+                  <button id="exportPdfButton" ref={ui.exportPdfBtn} className="btn btn-error btn-outline btn-sm gap-2" disabled>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      Export PDF
+                  </button>
+                  </div>
+              </div>
+              
+              {/* Loading Spinner */}
+              <div id="loadingSpinner" ref={ui.loader} className="flex flex-col items-center justify-center my-12 hidden">
+                  <span className="loading loading-bars loading-lg text-primary"></span>
+                  <p className="mt-3 text-base-content/60 font-medium animate-pulse">Processing PDF...</p>
+              </div>
 
-                {/* Results Table */}
-                <div id="resultContainer" ref={ui.resultContainer} className="border border-base-content/10 rounded-xl overflow-hidden hidden mt-4 bg-base-100 shadow-inner">
-                    <div className="overflow-x-auto h-[500px] scrollbar-thin">
-                    <table className="table table-sm table-zebra table-pin-rows w-full">
-                        <thead>
-                        <tr className="bg-base-200 text-base-content font-bold">
-                            <th className="w-24">Date</th>
-                            <th className="w-32">Type</th>
-                            <th>Details</th>
-                            <th className="w-32">TRX ID</th>
-                            <th className="text-right w-24">Out</th>
-                            <th className="text-right w-24">In</th>
-                            <th className="text-right w-24">Charge</th>
-                            <th className="text-right w-28">Balance</th>
-                        </tr>
-                        </thead>
-                        <tbody id="resultTableBody" ref={ui.tableBody} className="text-xs md:text-sm font-mono">
-                        {/* Rows injected here */}
-                        </tbody>
-                    </table>
-                    </div>
-                </div>
-                
-                {/* Empty State */}
-                <div id="emptyState" ref={ui.emptyState} className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-base-content/10 rounded-xl mt-4 bg-base-200/20">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 text-base-content/20 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    <p className="text-base-content/50 font-medium">No data loaded.</p>
-                </div>
-            </div>
+              {/* Summary Stats */}
+              <div id="summarySection" ref={ui.summary} className="flex flex-col gap-4 w-full mt-6 hidden">
+                  {/* Counts */}
+                  <div className="grid grid-cols-2 gap-4">
+                      <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
+                          <div className="stat-title text-xs uppercase font-bold opacity-60">Total Rows</div>
+                          <div id="totalItems" ref={ui.totalCount} className="stat-value text-primary text-xl">0</div>
+                      </div>
+                      <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
+                          <div className="stat-title text-xs uppercase font-bold opacity-60">Filtered Rows</div>
+                          <div id="filteredItems" ref={ui.filteredCount} className="stat-value text-secondary text-xl">0</div>
+                      </div>
+                  </div>
+                  {/* Calculations */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
+                          <div className="stat-title text-xs uppercase font-bold opacity-60 text-success">Total In (Cash In)</div>
+                          <div id="sumIn" ref={ui.sumIn} className="stat-value text-success text-xl">0.00</div>
+                      </div>
+                      <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
+                          <div className="stat-title text-xs uppercase font-bold opacity-60 text-base-content">Total Out (Cash Out)</div>
+                          <div id="sumOut" ref={ui.sumOut} className="stat-value text-base-content text-xl">0.00</div>
+                      </div>
+                      <div className="stat bg-base-200/50 rounded-lg p-3 border border-base-content/5">
+                          <div className="stat-title text-xs uppercase font-bold opacity-60 text-error">Total Charge</div>
+                          <div id="sumCharge" ref={ui.sumCharge} className="stat-value text-error text-xl">0.00</div>
+                      </div>
+                  </div>
+              </div>
+
+              {/* Results Table */}
+              <div id="resultContainer" ref={ui.resultContainer} className="border border-base-content/10 rounded-xl overflow-hidden hidden mt-4 bg-base-100 shadow-inner">
+                  <div className="overflow-x-auto h-[500px] scrollbar-thin">
+                  <table className="table table-sm table-zebra table-pin-rows w-full">
+                      <thead>
+                      <tr className="bg-base-200 text-base-content font-bold">
+                          <th className="w-24">Date</th>
+                          <th className="w-32">Type</th>
+                          <th>Details</th>
+                          <th className="w-32">TRX ID</th>
+                          <th className="text-right w-24">Out</th>
+                          <th className="text-right w-24">In</th>
+                          <th className="text-right w-24">Charge</th>
+                          <th className="text-right w-28">Balance</th>
+                      </tr>
+                      </thead>
+                      <tbody id="resultTableBody" ref={ui.tableBody} className="text-xs md:text-sm font-mono">
+                      {/* Rows injected here */}
+                      </tbody>
+                  </table>
+                  </div>
+              </div>
+              
+              {/* Empty State */}
+              <div id="emptyState" ref={ui.emptyState} className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-base-content/10 rounded-xl mt-4 bg-base-200/20">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 text-base-content/20 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  <p className="text-base-content/50 font-medium">No data loaded.</p>
+              </div>
+          </div>
+      </div>
+
+      {/* Modals and Toast */}
+      <dialog id="cache_modal" ref={ui.cacheModal} className="modal modal-bottom sm:modal-middle">
+        <div className="modal-box border border-base-content/10">
+          <h3 className="font-bold text-lg">Cache Settings</h3>
+          <p className="py-4 text-base-content/70">Select cache duration:</p>
+          <select id="cacheDurationSelect" className="select select-bordered w-full mb-4">
+              <option value="1">1 Day</option>
+              <option value="7">7 Days</option>
+              <option value="30">30 Days</option>
+          </select>
+          <div className="modal-action">
+            <form method="dialog">
+               <button id="saveCacheBtn" ref={ui.saveCacheBtn} className="btn btn-primary">Save & Close</button>
+            </form>
+          </div>
         </div>
+        <form method="dialog" className="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
 
-        {/* Modals and Toast */}
-        <dialog id="cache_modal" ref={ui.cacheModal} className="modal modal-bottom sm:modal-middle">
-          <div className="modal-box border border-base-content/10">
-            <h3 className="font-bold text-lg">Cache Settings</h3>
-            <p className="py-4 text-base-content/70">Select cache duration:</p>
-            <select id="cacheDurationSelect" className="select select-bordered w-full mb-4">
-                <option value="1">1 Day</option>
-                <option value="7">7 Days</option>
-                <option value="30">30 Days</option>
-            </select>
-            <div className="modal-action">
-              <form method="dialog">
-                 <button id="saveCacheBtn" ref={ui.saveCacheBtn} className="btn btn-primary">Save & Close</button>
-              </form>
-            </div>
+      <dialog id="password_modal" ref={ui.passwordModal} className="modal">
+        <div className="modal-box border border-error/20">
+          <h3 className="font-bold text-lg text-error">Password Protected</h3>
+          <p className="py-4">Enter password to unlock PDF:</p>
+          <p id="password_error" ref={ui.passwordError} className="text-error text-sm mb-2 hidden font-bold">Incorrect password.</p>
+          <input type="password" id="passwordInput" ref={ui.passwordInput} placeholder="Password" className="input input-bordered input-error w-full mb-4" />
+          <div className="modal-action">
+            <button id="cancelPasswordBtn" ref={ui.cancelPassBtn} className="btn btn-ghost">Cancel</button>
+            <button id="submitPasswordBtn" ref={ui.submitPassBtn} className="btn btn-error">Unlock</button>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button>close</button>
-          </form>
-        </dialog>
-
-        <dialog id="password_modal" ref={ui.passwordModal} className="modal">
-          <div className="modal-box border border-error/20">
-            <h3 className="font-bold text-lg text-error">Password Protected</h3>
-            <p className="py-4">Enter password to unlock PDF:</p>
-            <p id="password_error" ref={ui.passwordError} className="text-error text-sm mb-2 hidden font-bold">Incorrect password.</p>
-            <input type="password" id="passwordInput" ref={ui.passwordInput} placeholder="Password" className="input input-bordered input-error w-full mb-4" />
-            <div className="modal-action">
-              <button id="cancelPasswordBtn" ref={ui.cancelPassBtn} className="btn btn-ghost">Cancel</button>
-              <button id="submitPasswordBtn" ref={ui.submitPassBtn} className="btn btn-error">Unlock</button>
-            </div>
-          </div>
-        </dialog>
-        
-        <div id="toastContainer" ref={ui.toastContainer} className="toast toast-top toast-end z-50"></div>
+        </div>
+      </dialog>
+      
+      <div id="toastContainer" ref={ui.toastContainer} className="toast toast-top toast-end z-50"></div>
     </>
   );
 }
