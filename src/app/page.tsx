@@ -244,11 +244,11 @@ export default function Home() {
     }
 
     if(newFilesCount > 0) {
-      const existingDataKeys = new Set(allData.map(d => d.rawLine));
-      const uniqueNewTransactions = newTransactions.filter(t => !existingDataKeys.has(t.rawLine));
+      const combinedData = [...allData, ...newTransactions];
+      const uniqueData = Array.from(new Map(combinedData.map(item => [item.rawLine, item])).values());
       
-      setAllData(prev => [...prev, ...uniqueNewTransactions].sort((a, b) => (b.dateObj?.getTime() ?? 0) - (a.dateObj?.getTime() ?? 0)));
-      showToast('Success', `${newFilesCount} file(s) added, ${uniqueNewTransactions.length} unique transactions imported.`, 'default');
+      setAllData(uniqueData.sort((a, b) => (b.dateObj?.getTime() ?? 0) - (a.dateObj?.getTime() ?? 0)));
+      showToast('Success', `${newFilesCount} file(s) added, ${uniqueData.length - allData.length} unique transactions imported.`, 'default');
     }
     
     setIsLoading(false);
@@ -374,3 +374,5 @@ export default function Home() {
     </>
   );
 }
+
+    
