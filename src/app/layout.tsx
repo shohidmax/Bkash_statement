@@ -12,10 +12,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [theme, setTheme] = useState('night');
+  const [theme, setTheme] = useState('bkash');
 
   useEffect(() => {
-    const storedTheme = localStorage.getItem('bkash-theme') || 'night';
+    const storedTheme = localStorage.getItem('bkash-theme') || 'bkash';
     setTheme(storedTheme);
   }, []);
 
@@ -25,7 +25,7 @@ export default function RootLayout({
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prevTheme => (prevTheme === 'night' ? 'light' : 'night'));
+    setTheme(prevTheme => (prevTheme === 'night' ? 'bkash' : 'night'));
   };
 
   return (
@@ -49,7 +49,7 @@ export default function RootLayout({
             <ul className="menu menu-horizontal px-1 items-center">
               <li>
                 <label className="swap swap-rotate btn btn-ghost btn-circle">
-                  <input type="checkbox" onClick={toggleTheme} checked={theme === 'light'} readOnly/>
+                  <input type="checkbox" onClick={toggleTheme} checked={theme === 'night'} readOnly/>
                   <Sun className="swap-on fill-current w-5 h-5" />
                   <Moon className="swap-off fill-current w-5 h-5" />
                 </label>
