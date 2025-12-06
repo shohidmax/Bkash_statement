@@ -12,6 +12,8 @@ import FilterControls from '@/components/pdf/FilterControls';
 import SummaryStats from '@/components/pdf/SummaryStats';
 import ResultsTable from '@/components/pdf/ResultsTable';
 import { Modals } from '@/components/pdf/Modals';
+import PaymentTypePieChart from '@/components/pdf/PaymentTypePieChart';
+import PaymentTypeSummary from '@/components/pdf/PaymentTypeSummary';
 import { useToast } from "@/hooks/use-toast"
 
 declare global {
@@ -44,6 +46,12 @@ export type Summary = {
   totalCharge: number;
 }
 
+export type PaymentTypeSummaryData = {
+  name: string;
+  value: number;
+};
+
+
 export default function Home() {
   const [scriptsLoaded, setScriptsLoaded] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -52,6 +60,7 @@ export default function Home() {
   const [uploadedFiles, setUploadedFiles] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [summary, setSummary] = useState<Summary>({ totalIn: 0, totalOut: 0, totalCharge: 0});
+  const [paymentTypeSummary, setPaymentTypeSummary] = useState<PaymentTypeSummaryData[]>([]);
   const [filterValues, setFilterValues] = useState({
     text: '',
     mobile: '',
@@ -97,6 +106,22 @@ export default function Home() {
     });
     setSummary({ totalIn: tIn, totalOut: tOut, totalCharge: tCharge });
   }, []);
+
+  const calculatePaymentTypeSummary = useCallback((data: Transaction[]) => {
+    const summary: { [key: string]: number } = {};
+    data.forEach(row => {
+      if (row.type && parseAmount(row.out) > 0) {
+        if (!summary[row.type]) {
+          summary[row.type] = 0;
+        }
+        summary[row.type] += parseAmount(row.out);
+      }
+    });
+    const summaryArray = Object.keys(summary)
+      .map(key => ({ name: key, value: summary[key] }))
+      .sort((a, b) => b.value - a.value);
+    setPaymentTypeSummary(summaryArray);
+  }, []);
   
   const renderTable = useCallback((data: Transaction[]) => {
       setCurrentData(data);
@@ -128,6 +153,14 @@ export default function Home() {
       applyFilter();
     }
   }, [filterValues, allData, isClient, applyFilter]);
+
+  useEffect(() => {
+    if (allData.length > 0) {
+      calculatePaymentTypeSummary(allData);
+    } else {
+      setPaymentTypeSummary([]);
+    }
+  }, [allData, calculatePaymentTypeSummary]);
 
   const parseDate = useCallback((str: string) => {
     const m = str.match(/(\d{2})-(\w{3})-(\d{2})/);
@@ -355,6 +388,10 @@ export default function Home() {
                 filteredCount={currentData.length}
                 summary={summary}
               />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                <PaymentTypePieChart data={paymentTypeSummary} />
+                <PaymentTypeSummary data={paymentTypeSummary} />
+              </div>
               <ResultsTable 
                 data={currentData}
                 showToast={(msg) => showToast('Copied', msg, 'default')}
@@ -374,5 +411,3 @@ export default function Home() {
     </>
   );
 }
-
-    
