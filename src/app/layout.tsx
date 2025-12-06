@@ -64,7 +64,7 @@ export default function RootLayout({
         </main>
         
         <footer className="footer footer-center p-4 text-base-content/40 text-xs">
-          <aside><p>Secure Client-Side Processing</p></aside>
+          <aside><p>developed by shohidmax</p></aside>
         </footer>
         <Toaster />
       </body>
