@@ -1,25 +1,43 @@
-import type {Metadata} from 'next';
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
-
-export const metadata: Metadata = {
-  title: 'Solid PDF Filter Tool',
-  description: 'A tool to analyze and filter PDF statements.',
-};
+import { Moon, Sun } from 'lucide-react';
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const [theme, setTheme] = useState('night');
+
+  useEffect(() => {
+    const storedTheme = localStorage.getItem('bkash-theme') || 'night';
+    setTheme(storedTheme);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('bkash-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prevTheme => (prevTheme === 'night' ? 'light' : 'night'));
+  };
+
   return (
-    <html lang="en" data-theme="night">
+    <html lang="en" data-theme={theme} suppressHydrationWarning>
       <head>
+        <title>Bkash Statement Manager</title>
+        <meta name="description" content="A tool to analyze and filter PDF statements." />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="font-body antialiased min-h-screen flex flex-col bg-base-300 text-slate-300" suppressHydrationWarning>
+      <body className="font-body antialiased min-h-screen flex flex-col bg-base-300 text-base-content" suppressHydrationWarning>
         <div className="navbar bg-base-100 shadow-md border-b border-base-content/10 sticky top-0 z-30">
           <div className="flex-1">
             <a className="btn btn-ghost normal-case text-xl text-primary gap-2">
@@ -28,8 +46,14 @@ export default function RootLayout({
             </a>
           </div>
           <div className="flex-none">
-            <ul className="menu menu-horizontal px-1">
-              <li><a>Home</a></li>
+            <ul className="menu menu-horizontal px-1 items-center">
+              <li>
+                <label className="swap swap-rotate btn btn-ghost btn-circle">
+                  <input type="checkbox" onClick={toggleTheme} checked={theme === 'light'} readOnly/>
+                  <Sun className="swap-on fill-current w-5 h-5" />
+                  <Moon className="swap-off fill-current w-5 h-5" />
+                </label>
+              </li>
               <li><a>About</a></li>
             </ul>
           </div>
